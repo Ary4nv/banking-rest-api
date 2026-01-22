@@ -22,7 +22,11 @@ type input struct {
 	Name string `json:"name"`
 }
 
-type depositinput struct{
+type DepositInput struct{
+	Amount int `json:"amount"`
+}
+
+type WithdrawInput struct{
 	Amount int `json:"amount"`
 }
 
@@ -92,7 +96,7 @@ func main() {
 
 		err := json.NewDecoder(r.Body).Decode(&in)
 		if err != nil {
-			http.Error(w, "Invalid JSON", http.StatusBadRequest)
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
 
@@ -126,10 +130,10 @@ func main() {
 			return
 		}
 		
-		var dep depositinput
+		var dep DepositInput
 		err := json.NewDecoder(r.Body).Decode(&dep)
 		if err !=nil {
-			http.Error(w,"invalid jason",http.StatusBadRequest)
+			http.Error(w,"invalid JSON",http.StatusBadRequest)
 			return
 		}
 		if dep.Amount <= 0 {
@@ -144,6 +148,44 @@ func main() {
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
 
+
+	})
+
+	router.Post("/accounts/{id}/withdraw",func(w http.ResponseWriter,r *http.Request){
+		w.Header().Set("Content-Type","application/json")
+
+		id := chi.URLParam(r,"id")
+		acc, exist:= accounts[id]
+		if !exist {
+			http.Error(w,"account Not Found",http.StatusNotFound)
+			return
+		}
+
+		var wDraw WithdrawInput
+		err := json.NewDecoder(r.Body).Decode(&wDraw)
+		if err !=nil {
+			http.Error(w,"invalid Json",http.StatusBadRequest)
+			return
+		}
+
+		if wDraw.Amount <=0 {
+			http.Error(w,"amount invalid : cant be 0 or lower",http.StatusBadRequest)
+			return
+		}
+
+		if wDraw.Amount > acc.Balance {
+			http.Error(w, "insufficient funds", http.StatusBadRequest)
+			return
+		}
+
+		acc.Balance -= wDraw.Amount
+		accounts[id] = acc
+
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(acc) 
+	
+		
+	
 
 	})
 
