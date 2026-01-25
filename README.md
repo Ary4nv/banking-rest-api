@@ -1,9 +1,13 @@
+```markdown
 # 🏦 Banking REST API (Go)
 
-A simple **RESTful banking API** built with **Go** using `net/http` and the **Chi router**.  
-This project simulates core banking operations such as account creation, deposits, withdrawals, and transfers.
+A clean, RESTful banking API built in **Go** using the **Chi router**.  
+Simulates core banking operations: account creation, balance retrieval, deposits, withdrawals, and transfers — with input validation and proper HTTP responses.
 
-The purpose of this project is to practice and demonstrate **backend fundamentals**, clean API design, and server-side logic in Go.
+**Goal**: Demonstrate backend fundamentals, clean API design, error handling, and real-world server logic — aligned with internship-level expectations at banks, fintech, and tech companies.
+
+[![Go](https://img.shields.io/badge/Go-1.20+-00ADD8?style=flat&logo=go&logoColor=white)](https://go.dev)
+[![Chi](https://img.shields.io/badge/Router-Chi-00ADD8?style=flat)](https://github.com/go-chi/chi)
 
 ---
 
@@ -12,188 +16,97 @@ The purpose of this project is to practice and demonstrate **backend fundamental
 - Create bank accounts
 - List all accounts
 - Get account by ID
-- Deposit money
-- Withdraw money (with balance validation)
-- Transfer money between accounts
-- JSON request / response handling
-- Proper HTTP status codes
-- Middleware logging & recovery
+- Deposit money (with amount validation)
+- Withdraw money (with insufficient funds check)
+- Transfer money between accounts (with balance & same-account validation)
+- JSON request/response with proper status codes (200, 201, 400, 404)
+- Middleware: logging + panic recovery
+
+**Current Status**: In-memory storage (map) — **PostgreSQL integration in progress** (persistent storage + transactions).
 
 ---
 
 ## 🛠 Tech Stack
 
-- **Go**
-- **net/http**
-- **Chi Router**
-- **JSON**
-- In-memory data storage (map)
+- **Go** (1.20+)
+- **Chi router** (lightweight routing)
+- **net/http** (standard library)
+- JSON encoding/decoding
+- In-memory storage (`map[string]Account`)
+- Middleware (`middleware.Logger`, `middleware.Recoverer`)
 
 ---
 
 ## 📦 Getting Started
 
 ### Prerequisites
-- Go 1.20 or newer
 
-### Run the server
+- Go 1.20 or higher
+
+### Run Locally
+
 ```bash
+# Clone repo
+git clone https://github.com/yourusername/banking-rest-api.git
+cd banking-rest-api
+
+# Run
 go run main.go
 ```
 
-The server will start on:
-```
-http://localhost:3000
-```
+Server starts at:  
+**http://localhost:3000**
 
 ---
 
 ## 🔍 API Endpoints
 
-### Health Check
-**GET** `/health`
+Base URL: `http://localhost:3000`
 
-```bash
-curl http://localhost:3000/health
-```
+| Method | Endpoint                        | Description                          | Example curl Command                                                                 | Expected Response (200/201)                          |
+|--------|---------------------------------|--------------------------------------|--------------------------------------------------------------------------------------|------------------------------------------------------|
+| GET    | /health                         | Health check                         | `curl http://localhost:3000/health`                                                  | `{"status": "ok"}`                                   |
+| POST   | /accounts                       | Create account                       | `curl -X POST http://localhost:3000/accounts -H "Content-Type: application/json" -d '{"name":"Arian"}'` | `{"id":"a1","name":"Arian","balance":0}`             |
+| GET    | /accounts                       | List all accounts                    | `curl http://localhost:3000/accounts`                                                | `[{"id":"a1","name":"Arian","balance":0}, ...]`      |
+| GET    | /accounts/{id}                  | Get account by ID                    | `curl http://localhost:3000/accounts/a1`                                             | `{"id":"a1","name":"Arian","balance":0}`             |
+| POST   | /accounts/{id}/deposit          | Deposit money                        | `curl -X POST http://localhost:3000/accounts/a1/deposit -H "Content-Type: application/json" -d '{"amount":100}'` | `{"id":"a1","name":"Arian","balance":100}`           |
+| POST   | /accounts/{id}/withdraw         | Withdraw money                       | `curl -X POST http://localhost:3000/accounts/a1/withdraw -H "Content-Type: application/json" -d '{"amount":50}'` | `{"id":"a1","name":"Arian","balance":50}`            |
+| POST   | /transfer                       | Transfer money between accounts      | `curl -X POST http://localhost:3000/transfer -H "Content-Type: application/json" -d '{"from":"a1","to":"a2","amount":25}'` | `{"from":{...},"to":{...}}`                          |
 
----
-
-### Create Account
-**POST** `/accounts`
-
-```bash
-curl -X POST http://localhost:3000/accounts \
-  -H "Content-Type: application/json" \
-  -d '{"name":"Aryan"}'
-```
-
-Response:
-```json
-{
-  "id": "a1",
-  "name": "Aryan",
-  "balance": 0
-}
-```
+**Error Responses** (examples):  
+- 400 Bad Request: `{"error": "amount must be > 0"}`  
+- 404 Not Found: `{"error": "account not found"}`  
+- 400 Bad Request: `{"error": "insufficient funds"}`
 
 ---
 
-### List All Accounts
-**GET** `/accounts`
+## ⚠️ Current Limitations
 
-```bash
-curl http://localhost:3000/accounts
-```
-
-Response:
-```json
-{
-  "accounts": [
-    {
-      "id": "a1",
-      "name": "Aryan",
-      "balance": 100
-    }
-  ]
-}
-```
-
----
-
-### Get Account by ID
-**GET** `/accounts/{id}`
-
-```bash
-curl http://localhost:3000/accounts/a1
-```
-
----
-
-### Deposit Money
-**POST** `/accounts/{id}/deposit`
-
-```bash
-curl -X POST http://localhost:3000/accounts/a1/deposit \
-  -H "Content-Type: application/json" \
-  -d '{"amount":100}'
-```
-
----
-
-### Withdraw Money
-**POST** `/accounts/{id}/withdraw`
-
-```bash
-curl -X POST http://localhost:3000/accounts/a1/withdraw \
-  -H "Content-Type: application/json" \
-  -d '{"amount":50}'
-```
-
-Validation:
-- Amount must be greater than 0
-- Balance must be sufficient
-
----
-
-### Transfer Money
-**POST** `/transfer`
-
-```bash
-curl -X POST http://localhost:3000/transfer \
-  -H "Content-Type: application/json" \
-  -d '{"from":"a1","to":"a2","amount":25}'
-```
-
-Response:
-```json
-{
-  "from": {
-    "id": "a1",
-    "name": "Aryan",
-    "balance": 75
-  },
-  "to": {
-    "id": "a2",
-    "name": "Nima",
-    "balance": 25
-  }
-}
-```
-
-Validation:
-- Accounts must exist
-- Amount must be greater than 0
-- Cannot transfer to the same account
-- Sender must have sufficient balance
-
----
-
-## ⚠️ Important Notes
-
-- Data is stored **in memory** using a Go map  
-- Restarting the server will reset all accounts
-- This is intentional for learning purposes
+- Data is **in-memory only** (resets on restart) — PostgreSQL integration in progress
+- No authentication — learning/demo purposes only
+- No unit tests yet — planned next
 
 ---
 
 ## 🧭 Roadmap / Next Steps
 
-- Replace in-memory storage with **SQLite**
-- Add unit tests
-- Improve error response structure
-- Add authentication
-- Deploy to cloud (Render / AWS)
+- Integrate PostgreSQL for persistent storage
+- Add transactional safety for transfers
+- Containerize with Docker
+- Add minimal frontend demo (HTML + JS fetch)
+- Write unit tests for handlers
+- Deploy to Render (public live demo)
+- Prepare for interviews (explain endpoints, tradeoffs, errors)
 
 ---
 
 ## 👤 Author
 
-Built by **Aryan**  
-Learning backend development with Go and REST APIs.
+Built by **Arian Vares**  
+Fourth-year Computer Science student at Ontario Tech University  
+Learning backend development with Go, REST APIs, and databases.
 
----
+Open-source for learning and practice — feel free to fork/use.
 
-## 📄 License
+```
 
-This project is open-source and free to use for learning and practice.
