@@ -21,7 +21,7 @@ Simulates core banking operations: account creation, balance retrieval, deposits
 - JSON request/response with proper status codes (200, 201, 400, 404)
 - Middleware: logging + panic recovery
 
-**Current Status**: In-memory storage (map) — **PostgreSQL integration in progress** (persistent storage + transactions).
+**Current Status**: In-memory storage (map) — **PostgreSQL integration in progress** (persistent storage + transactions). Future updates will add database persistence, transactional safety, Docker containerization, and a minimal frontend demo.
 
 ---
 
@@ -46,11 +46,12 @@ Simulates core banking operations: account creation, balance retrieval, deposits
 
 ```bash
 # Clone repo
-git clone https://github.com/yourusername/banking-rest-api.git
+git clone https://github.com/Ary4nv/banking-rest-api.git
 cd banking-rest-api
 
 # Run
 go run main.go
+```
 
 Server starts at:  
 **http://localhost:3000**
@@ -105,6 +106,4 @@ Fourth-year Computer Science student at Ontario Tech University
 Learning backend development with Go, REST APIs, and databases.
 
 Open-source for learning and practice — feel free to fork/use.
-
-```
 
