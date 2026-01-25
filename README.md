@@ -1,4 +1,3 @@
-```markdown
 # 🏦 Banking REST API (Go)
 
 A clean, RESTful banking API built in **Go** using the **Chi router**.  
@@ -52,7 +51,6 @@ cd banking-rest-api
 
 # Run
 go run main.go
-```
 
 Server starts at:  
 **http://localhost:3000**
