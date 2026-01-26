@@ -1,19 +1,24 @@
 package main
 
 import (
+	"database/sql"
 	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
+	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 const Addr = ":3000"
 
 type Account struct {
-	ID      string `json:"id"`
+	ID      int    `json:"id"`
 	Name    string `json:"name"`
 	Balance int    `json:"balance"`
 }
@@ -22,130 +27,207 @@ type input struct {
 	Name string `json:"name"`
 }
 
-type DepositInput struct{
+type DepositInput struct {
 	Amount int `json:"amount"`
 }
 
-type WithdrawInput struct{
+type WithdrawInput struct {
 	Amount int `json:"amount"`
 }
 
 type Transfer struct {
-	From string `json:"from"`
-	To string `json:"to"`
+	From   int `json:"from"`
+	To     int `json:"to"`
 	Amount int `json:"amount"`
 }
 
-var accounts = map[string]Account{}
-var nextID = 1
+// In-memory storage for now (will be replaced by DB later)
+var accounts = map[int]Account{}
 
+// openDB initializes and verifies a PostgreSQL connection pool
+// *sql.DB is NOT a single connection — it is a pool manager
+func openDB() (*sql.DB, error) {
+	dsn := os.Getenv("DATABASE_URL")
+	if dsn == "" {
+		return nil, fmt.Errorf("DATABASE_URL is not set")
+	}
 
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return nil, err
+	}
+
+	// Pool settings (safe defaults)
+	db.SetMaxOpenConns(10)
+	db.SetMaxIdleConns(5)
+	db.SetConnMaxLifetime(30 * time.Minute)
+
+	// Verify connection now (fail fast)
+	if err := db.Ping(); err != nil {
+		db.Close()
+		return nil, err
+	}
+
+	return db, nil
+}
+
+// helper: read {id} from URL and convert to int
+func parseID(r *http.Request) (int, error) {
+	idStr := chi.URLParam(r, "id")
+	return strconv.Atoi(idStr)
+}
 
 func main() {
-	//Router and middleware Created
+	// DB connection check (server won't start if DB is down)
+	db, err := openDB()
+	if err != nil {
+		log.Fatal("database connection failed: ", err)
+	}
+	defer db.Close()
+	log.Println("Database connected successfully")
+
+	// Router and middleware
 	router := chi.NewRouter()
 	router.Use(middleware.Logger)
 	router.Use(middleware.Recoverer)
 
-	//Endpoints created
+	// Health endpoint
 	router.Get("/health", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"status": "ok",
 		})
 	})
 
+	// Home
 	router.Get("/", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusOK)
-		json.NewEncoder(w).Encode(map[string]string{
+		_ = json.NewEncoder(w).Encode(map[string]string{
 			"message": "Home Page",
 		})
 	})
 
+	// GET /accounts (list all) — NOW READS FROM POSTGRES
 	router.Get("/accounts", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
+
+		rows, err := db.Query("SELECT id, name,balance FROM accounts ORDER BY id")
+		if err != nil {
+			http.Error(w, "Query error", http.StatusInternalServerError)
+			return
+		}
+		defer rows.Close()
 
 		list := []Account{}
-		for _,acc := range accounts{
-			list = append(list,acc)
+		for rows.Next() {
+			var acc Account
+			err := rows.Scan(&acc.ID, &acc.Name, &acc.Balance)
+			if err != nil {
+				http.Error(w, "database scan error", http.StatusInternalServerError)
+				return
+			}
+			list = append(list, acc)
+
+		}
+		if err := rows.Err(); err != nil {
+			http.Error(w, "database row error", http.StatusInternalServerError)
+			return
 		}
 
+		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string][]Account{
-			"accounts" : list,
+			"accounts": list,
 		})
-
 
 	})
 
-	router.Get("/accounts/{id}",func(w http.ResponseWriter, r *http.Request){
+	// GET /accounts/{id} — still in-memory for now (Step 2 will move it to DB)
+	router.Get("/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		
-		id := chi.URLParam(r,"id")
-		acc, found := accounts[id]
-		if !found {
-			http.Error(w,"account not found",http.StatusNotFound)
+
+		//Conver the id client enters (string) to int and return error
+		id, err := parseID(r)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
 			return
+		}
+
+		//Get a row from databse and place it in acc variable
+		var acc Account
+		row := db.QueryRow("SELECT id, name, balance FROM accounts WHERE id = $1", id)
+		err = row.Scan(&acc.ID, &acc.Name, &acc.Balance)
+		//Scan of database happend but now row came back
+		if err == sql.ErrNoRows {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+
+		}
+		if err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+
 		}
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
 
-		
 	})
 
+	// POST /accounts (create) — still in-memory for now (Step 3 will move it to DB)
 	router.Post("/accounts", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		var in input
 
-		err := json.NewDecoder(r.Body).Decode(&in)
-		if err != nil {
+		var in input
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
-
 		if in.Name == "" {
 			http.Error(w, "name is required", http.StatusBadRequest)
 			return
 		}
 
-		id := fmt.Sprintf("a%d", nextID)
-		nextID++
+		// For now (in-memory): generate ID as len(map)+1
+		// Later (DB): Postgres will generate SERIAL id automatically.
+		id := len(accounts) + 1
+
 		acc := Account{
 			ID:      id,
 			Name:    in.Name,
 			Balance: 0,
 		}
-
 		accounts[id] = acc
 
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(acc)
-
 	})
 
-	router.Post("/accounts/{id}/deposit",func(w http.ResponseWriter,r *http.Request){
-		w.Header().Set("Content-Type","application/json")
+	// POST /accounts/{id}/deposit — still in-memory for now
+	router.Post("/accounts/{id}/deposit", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 
-		id := chi.URLParam(r,"id")
-		acc, exist := accounts[id]
-		if !exist{
-			http.Error(w,"account not found",http.StatusNotFound)
+		id, err := parseID(r)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
 			return
 		}
-		
+
+		acc, exist := accounts[id]
+		if !exist {
+			http.Error(w, "account not found", http.StatusNotFound)
+			return
+		}
+
 		var dep DepositInput
-		err := json.NewDecoder(r.Body).Decode(&dep)
-		if err !=nil {
-			http.Error(w,"invalid JSON",http.StatusBadRequest)
+		if err := json.NewDecoder(r.Body).Decode(&dep); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
 		if dep.Amount <= 0 {
-			http.Error(w,"amount must be > 0",http.StatusBadRequest)
+			http.Error(w, "amount must be > 0", http.StatusBadRequest)
 			return
-
 		}
 
 		acc.Balance += dep.Amount
@@ -153,32 +235,33 @@ func main() {
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
-
-
 	})
 
-	router.Post("/accounts/{id}/withdraw",func(w http.ResponseWriter,r *http.Request){
-		w.Header().Set("Content-Type","application/json")
+	// POST /accounts/{id}/withdraw — still in-memory for now
+	router.Post("/accounts/{id}/withdraw", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
 
-		id := chi.URLParam(r,"id")
-		acc, exist:= accounts[id]
+		id, err := parseID(r)
+		if err != nil {
+			http.Error(w, "invalid id", http.StatusBadRequest)
+			return
+		}
+
+		acc, exist := accounts[id]
 		if !exist {
-			http.Error(w,"account Not Found",http.StatusNotFound)
+			http.Error(w, "account not found", http.StatusNotFound)
 			return
 		}
 
 		var wDraw WithdrawInput
-		err := json.NewDecoder(r.Body).Decode(&wDraw)
-		if err !=nil {
-			http.Error(w,"invalid JSON",http.StatusBadRequest)
+		if err := json.NewDecoder(r.Body).Decode(&wDraw); err != nil {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
-
-		if wDraw.Amount <=0 {
-			http.Error(w,"amount must be > 0",http.StatusBadRequest)
+		if wDraw.Amount <= 0 {
+			http.Error(w, "amount must be > 0", http.StatusBadRequest)
 			return
 		}
-
 		if wDraw.Amount > acc.Balance {
 			http.Error(w, "insufficient funds", http.StatusBadRequest)
 			return
@@ -188,67 +271,61 @@ func main() {
 		accounts[id] = acc
 
 		w.WriteHeader(http.StatusOK)
-		_ = json.NewEncoder(w).Encode(acc) 
-	
-		
-	
-
+		_ = json.NewEncoder(w).Encode(acc)
 	})
 
-	router.Post("/transfer", func(w http.ResponseWriter , r *http.Request){
-		w.Header().Set("Content-Type","application/json")
-		
+	// POST /transfer — still in-memory for now
+	router.Post("/transfer", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
 		var t Transfer
-		err := json.NewDecoder(r.Body).Decode(&t)
-		if err != nil{
+		if err := json.NewDecoder(r.Body).Decode(&t); err != nil {
 			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
-		}		
-		if t.Amount <=0 {
+		}
+		if t.Amount <= 0 {
 			http.Error(w, "invalid amount", http.StatusBadRequest)
+			return
+		}
+		if t.From <= 0 || t.To <= 0 {
+			http.Error(w, "account id must be positive", http.StatusBadRequest)
 			return
 		}
 		if t.From == t.To {
 			http.Error(w, "cant transfer between same accounts", http.StatusBadRequest)
 			return
 		}
-		if t.From == "" || t.To == ""{
-			http.Error(w, "account id cant be empty", http.StatusBadRequest)
-			return
 
-		}
-
-		AccFrom, ok := accounts[t.From]
+		accFrom, ok := accounts[t.From]
 		if !ok {
 			http.Error(w, "from account not found", http.StatusNotFound)
 			return
 		}
-		AccTo, ok := accounts[t.To]
+		accTo, ok := accounts[t.To]
 		if !ok {
 			http.Error(w, "destination account not found", http.StatusNotFound)
 			return
 		}
-		if AccFrom.Balance < t.Amount {
+
+		if accFrom.Balance < t.Amount {
 			http.Error(w, "insufficient balance", http.StatusBadRequest)
 			return
 		}
-		AccFrom.Balance -= t.Amount
-		AccTo.Balance += t.Amount
-		
-		accounts[t.From] = AccFrom
-		accounts[t.To] = AccTo
+
+		accFrom.Balance -= t.Amount
+		accTo.Balance += t.Amount
+
+		accounts[t.From] = accFrom
+		accounts[t.To] = accTo
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]Account{
-			"from" : AccFrom,
-			"to" : AccTo,
-
+			"from": accFrom,
+			"to":   accTo,
 		})
-
 	})
 
-	//Server created and run
+	// Start server
 	log.Println("Starting Server on ", Addr)
 	log.Fatal(http.ListenAndServe(Addr, router))
-
 }
