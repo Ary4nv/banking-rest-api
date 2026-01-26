@@ -114,53 +114,65 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 
 		rows, err := db.Query("SELECT id, name,balance FROM accounts ORDER BY id")
-		if err != nil{
+		if err != nil {
 			http.Error(w, "Query error", http.StatusInternalServerError)
 			return
 		}
 		defer rows.Close()
 
-		list :=[]Account{}
+		list := []Account{}
 		for rows.Next() {
 			var acc Account
 			err := rows.Scan(&acc.ID, &acc.Name, &acc.Balance)
-			if err != nil{
+			if err != nil {
 				http.Error(w, "database scan error", http.StatusInternalServerError)
 				return
 			}
-			list = append(list,acc)
+			list = append(list, acc)
 
 		}
-		if err := rows.Err(); err != nil{
-			http.Error(w,"database row error",http.StatusInternalServerError)
+		if err := rows.Err(); err != nil {
+			http.Error(w, "database row error", http.StatusInternalServerError)
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string][]Account{
-			"accounts" : list,
+			"accounts": list,
 		})
-			
+
 	})
 
 	// GET /accounts/{id} — still in-memory for now (Step 2 will move it to DB)
 	router.Get("/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
+		//Conver the id client enters (string) to int and return error
 		id, err := parseID(r)
 		if err != nil {
 			http.Error(w, "invalid id", http.StatusBadRequest)
 			return
 		}
 
-		acc, found := accounts[id]
-		if !found {
+		//Get a row from databse and place it in acc variable
+		var acc Account
+		row := db.QueryRow("SELECT id, name, balance FROM accounts WHERE id = $1", id)
+		err = row.Scan(&acc.ID, &acc.Name, &acc.Balance)
+		//Scan of database happend but now row came back
+		if err == sql.ErrNoRows {
 			http.Error(w, "account not found", http.StatusNotFound)
 			return
+
+		}
+		if err != nil {
+			http.Error(w, "database error", http.StatusInternalServerError)
+			return
+
 		}
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
+
 	})
 
 	// POST /accounts (create) — still in-memory for now (Step 3 will move it to DB)
