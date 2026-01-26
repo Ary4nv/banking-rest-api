@@ -77,6 +77,14 @@ func parseID(r *http.Request) (int, error) {
 	return strconv.Atoi(idStr)
 }
 
+func writeJSONError(w http.ResponseWriter, status int, message string){
+	w.Header().Set("Content-Type","application/json")
+	w.WriteHeader(status)
+	_ = json.NewEncoder(w).Encode(map[string]string{
+		"Error" : message,
+	})
+}
+
 func main() {
 	// DB connection check (server won't start if DB is down)
 	db, err := openDB()
@@ -150,7 +158,7 @@ func main() {
 		//Conver the id client enters (string) to int and return error
 		id, err := parseID(r)
 		if err != nil {
-			http.Error(w, "invalid id", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 
@@ -160,12 +168,12 @@ func main() {
 		err = row.Scan(&acc.ID, &acc.Name, &acc.Balance)
 		//Scan of database happend but now row came back
 		if err == sql.ErrNoRows {
-			http.Error(w, "account not found", http.StatusNotFound)
+			writeJSONError(w, http.StatusNotFound, "account not found")	
 			return
 
 		}
 		if err != nil {
-			http.Error(w, "database error", http.StatusInternalServerError)
+			writeJSONError(w, http.StatusInternalServerError, "database error")
 			return
 
 		}
@@ -175,30 +183,27 @@ func main() {
 
 	})
 
-	// POST /accounts (create) — still in-memory for now (Step 3 will move it to DB)
+	// POST /accounts (create) 
 	router.Post("/accounts", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		var in input
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if in.Name == "" {
-			http.Error(w, "name is required", http.StatusBadRequest)
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil{
+			writeJSONError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 
-		// For now (in-memory): generate ID as len(map)+1
-		// Later (DB): Postgres will generate SERIAL id automatically.
-		id := len(accounts) + 1
-
-		acc := Account{
-			ID:      id,
-			Name:    in.Name,
-			Balance: 0,
+		if in.Name == ""{
+			writeJSONError(w, http.StatusBadRequest, "name required")
+			return
 		}
-		accounts[id] = acc
+		var acc Account
+		err = db.QueryRow("INSERT INTO accounts (name, balance) VALUES ($1, 0) RETURNING id, name, balance;",in.Name).Scan(&acc.ID, &acc.Name, &acc.Balance)
+		
+		if err != nil{
+			writeJSONError(w, http.StatusInternalServerError, "database error")
+			return
+		}
 
 		w.WriteHeader(http.StatusCreated)
 		_ = json.NewEncoder(w).Encode(acc)
@@ -209,32 +214,40 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 
 		id, err := parseID(r)
-		if err != nil {
-			http.Error(w, "invalid id", http.StatusBadRequest)
-			return
-		}
-
-		acc, exist := accounts[id]
-		if !exist {
-			http.Error(w, "account not found", http.StatusNotFound)
+		if err != nil{
+			writeJSONError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
 
 		var dep DepositInput
-		if err := json.NewDecoder(r.Body).Decode(&dep); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
+		err = json.NewDecoder(r.Body).Decode(&dep)
+		if err != nil{
+			writeJSONError(w, http.StatusBadRequest, "invlaid JSON")
 			return
 		}
+
 		if dep.Amount <= 0 {
-			http.Error(w, "amount must be > 0", http.StatusBadRequest)
+			writeJSONError(w, http.StatusBadRequest, "amount must be higher than 0")
 			return
 		}
 
-		acc.Balance += dep.Amount
-		accounts[id] = acc
+		var acc Account
+		err = db.QueryRow("UPDATE accounts SET balance = balance + $1 WHERE id = $2 RETURNING id, name, balance;", dep.Amount, id ).Scan(&acc.ID, &acc.Name, &acc.Balance)
+		if err == sql.ErrNoRows {
+			writeJSONError(w, http.StatusNotFound, "account not found")
+			return
 
+		}
+
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "database error")
+			return
+		}
+		
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
+
+
 	})
 
 	// POST /accounts/{id}/withdraw — still in-memory for now
