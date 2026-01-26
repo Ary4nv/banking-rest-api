@@ -255,36 +255,47 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 
 		id, err := parseID(r)
+		if err != nil{
+			writeJSONError(w, http.StatusBadRequest, "invalid id")
+			return
+		}
+
+		var wdraw WithdrawInput
+		err = json.NewDecoder(r.Body).Decode(&wdraw)
+		if err!= nil{
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		if wdraw.Amount <=0 {
+			writeJSONError(w, http.StatusBadRequest, "amount cant be negetive")
+			return
+		}
+
+		var acc Account
+		
+
+		err = db.QueryRow("UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING id, name, balance ", wdraw.Amount, id).Scan(&acc.ID, &acc.Name, &acc.Balance)
+		if err == sql.ErrNoRows{
+			writeJSONError(w, http.StatusNotFound, "account not found")
+			return
+		}
+
+		if wdraw.Amount > acc.Balance {
+			writeJSONError(w, http.StatusBadRequest, "amount can't be higher than balance")
+			return
+
+		}
+
 		if err != nil {
-			http.Error(w, "invalid id", http.StatusBadRequest)
+			writeJSONError (w, http.StatusInternalServerError, "database error")
 			return
-		}
 
-		acc, exist := accounts[id]
-		if !exist {
-			http.Error(w, "account not found", http.StatusNotFound)
-			return
 		}
-
-		var wDraw WithdrawInput
-		if err := json.NewDecoder(r.Body).Decode(&wDraw); err != nil {
-			http.Error(w, "invalid JSON", http.StatusBadRequest)
-			return
-		}
-		if wDraw.Amount <= 0 {
-			http.Error(w, "amount must be > 0", http.StatusBadRequest)
-			return
-		}
-		if wDraw.Amount > acc.Balance {
-			http.Error(w, "insufficient funds", http.StatusBadRequest)
-			return
-		}
-
-		acc.Balance -= wDraw.Amount
-		accounts[id] = acc
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
+
 	})
 
 	// POST /transfer — still in-memory for now
