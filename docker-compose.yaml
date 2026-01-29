@@ -1,0 +1,27 @@
+
+services:
+  db: 
+    image: postgres:14.20-trixie
+    environment:
+      POSTGRES_USER: appuser
+      POSTGRES_PASSWORD: secret
+      POSTGRES_DB: dbapp
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    
+
+  api:
+    build: .
+    environment:
+        DATABASE_URL: postgres://appuser:secret@db:5432/dbapp?sslmode=disable
+    ports:
+      - "8080:3000"
+    depends_on:
+      - db
+
+volumes:
+  pgdata:
+
+
