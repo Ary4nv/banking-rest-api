@@ -61,13 +61,23 @@ func openDB() (*sql.DB, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
 
-	// Verify connection now (fail fast)
-	if err := db.Ping(); err != nil {
-		db.Close()
-		return nil, err
-	}
+	for i:=1; i<=10; i++{
 
-	return db, nil
+		err = db.Ping()
+		if err == nil{
+			log.Println("Database connect successfully")
+			return db,nil
+
+			
+		}
+		log.Printf("waiting for database... %d/10",i)
+		time.Sleep(2 *time.Second)
+	}
+		
+
+		db.Close()
+		return nil, fmt.Errorf("database not ready after tries")
+	
 }
 
 // helper: read {id} from URL and convert to int
@@ -122,8 +132,9 @@ func main() {
 
 		rows, err := db.Query("SELECT id, name,balance FROM accounts ORDER BY id")
 		if err != nil {
-			http.Error(w, "Query error", http.StatusInternalServerError)
-			return
+			log.Println("accounts query error:", err)
+    		writeJSONError(w, http.StatusInternalServerError, "database query error")
+    		return
 		}
 		defer rows.Close()
 
@@ -295,6 +306,7 @@ func main() {
 
 		if err == sql.ErrNoRows{
 			writeJSONError (w, http.StatusBadRequest, "insufficient funds")
+			return
 		}
 
 		if err != nil {
