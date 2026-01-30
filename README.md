@@ -1,4 +1,3 @@
-```markdown
 # 🏦 Banking REST API (Go)
 
 A clean, RESTful banking API built in **Go** using the **Chi router** and **PostgreSQL**.  
