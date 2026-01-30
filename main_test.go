@@ -145,7 +145,7 @@ func TestUnknownRouteReturn404(t *testing.T) {
 	router.ServeHTTP(rr, rq)
 
 	if rr.Code != http.StatusNotFound {
-		t.Fatalf("we expected to get 404 but got : %v", rr.Code)
+		t.Fatalf("we expected to get 404 but got : %d", rr.Code)
 	}
 }
 
@@ -218,7 +218,7 @@ func TestFromEqualsTo(t *testing.T) {
 	var body map[string]string
 	err := json.NewDecoder(rr.Body).Decode(&body)
 	if err != nil {
-		t.Fatalf("failed to decode : %s", rr.Body)
+		t.Fatalf("failed to decode : %s", rr.Body.String())
 	}
 
 	if body["Error"]!= "cannot transfer to same account"{

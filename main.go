@@ -41,7 +41,21 @@ type Transfer struct {
 	Amount int `json:"amount"`
 }
 
+func validateTransfer(t Transfer) error {
+	if t.From <= 0 || t.To <= 0 {
+		return fmt.Errorf("account id must be positive")
+	}
 
+	if t.From == t.To {
+		return fmt.Errorf("cannot transfer to same account")
+	}
+
+	if t.Amount <= 0 {
+		return fmt.Errorf("amount must be greater than 0")
+	}
+
+	return nil
+}
 
 // openDB initializes and verifies a PostgreSQL connection pool
 // *sql.DB is NOT a single connection — it is a pool manager
