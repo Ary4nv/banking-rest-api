@@ -50,12 +50,11 @@ func TestValidateTransfer_InvalidCases(t *testing.T) {
 			name:    "amount cant be negetive",
 			input:   Transfer{From: 3, To: 2, Amount: -10},
 			wantErr: true,
-		},{
-			
-  			name: "valid transfer",
-  			input: Transfer{From: 1, To: 2, Amount: 10},
-  			wantErr: false,
-			
+		}, {
+
+			name:    "valid transfer",
+			input:   Transfer{From: 1, To: 2, Amount: 10},
+			wantErr: false,
 		},
 	}
 
@@ -154,14 +153,14 @@ func TestTransferReturn400(t *testing.T) {
 	router := chi.NewRouter()
 
 	router.Post("/transfer", func(w http.ResponseWriter, r *http.Request) {
-    var tr Transfer
-    err := json.NewDecoder(r.Body).Decode(&tr)
-    if err != nil {
-        writeJSONError(w, http.StatusBadRequest, "invalid JSON")
-        return
-    }
+		var tr Transfer
+		err := json.NewDecoder(r.Body).Decode(&tr)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
 
-    writeJSONError(w, http.StatusInternalServerError, "server failed")
+		writeJSONError(w, http.StatusInternalServerError, "server failed")
 	})
 
 	rq := httptest.NewRequest("POST", "/transfer", strings.NewReader("{bad json"))
@@ -169,7 +168,6 @@ func TestTransferReturn400(t *testing.T) {
 
 	router.ServeHTTP(rr, rq)
 
-	
 	if rr.Code != http.StatusBadRequest {
 		t.Fatalf("expected to get 400 but got %v", rr.Code)
 	}
@@ -181,8 +179,93 @@ func TestTransferReturn400(t *testing.T) {
 		t.Fatalf("failed to decode response : %v", err)
 
 	}
-	if body["Error"] != "invalid JSON"{
-		t.Fatalf("expected Error: invalid JSON but got Error : %s",body["Error"])
+	if body["Error"] != "invalid JSON" {
+		t.Fatalf("expected Error: invalid JSON but got Error : %s", body["Error"])
+	}
+
+}
+
+func TestFromEqualsTo(t *testing.T) {
+	router := chi.NewRouter()
+
+	router.Post("/transfer", func(w http.ResponseWriter, r *http.Request) {
+
+		var tr Transfer
+		err := json.NewDecoder(r.Body).Decode(&tr)
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		if err := validateTransfer(tr); err != nil {
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+	})
+
+	rq := httptest.NewRequest("POST", "/transfer", strings.NewReader(`{"from":1, "to":1, "amount":10}`))
+	rq.Header.Set("Content-Type", "application/json")
+
+	rr := httptest.NewRecorder()
+
+	router.ServeHTTP(rr, rq)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 but got %d", rr.Code)
+	}
+
+	var body map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&body)
+	if err != nil {
+		t.Fatalf("failed to decode : %s", rr.Body)
+	}
+
+	if body["Error"]!= "cannot transfer to same account"{
+		t.Fatalf("expected to get error: cannot transfer to same account but got %s",body["Error"])
+	}
+
+
+}
+
+
+func TestInvalidAmountReturns400 (t *testing.T){
+	router:=chi.NewRouter()
+
+	router.Post("/transfer", func(w http.ResponseWriter, r *http.Request){
+		var tr Transfer
+		err := json.NewDecoder(r.Body).Decode(&tr)
+		if err != nil {
+			writeJSONError (w, http.StatusBadRequest, "invalid JSON")
+			return
+		}
+
+		if err := validateTransfer(tr); err !=nil{
+			writeJSONError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+
+	})
+
+	rq := httptest.NewRequest("POST", "/transfer", strings.NewReader(`{"from":1, "to":2, "amount":0}`))
+	rq.Header.Set("Content-Type","application/json")
+
+	rr:= httptest.NewRecorder()
+
+	router.ServeHTTP(rr, rq)
+
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("expected 400 but got : %d", rr.Code)
+	}
+
+	var body map[string]string
+	err := json.NewDecoder(rr.Body).Decode(&body)
+	if err != nil{
+		t.Fatalf("failed to decode : %s",rr.Body.String())
+	}
+	if body["Error"] != "amount must be greater than 0"{
+		t.Fatalf("expect error : amount must be grater than zero but got %s",body["Error"])
+
 	}
 
 }
