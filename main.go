@@ -41,7 +41,18 @@ type Transfer struct {
 	Amount int `json:"amount"`
 }
 
-
+func validateTransfer(t Transfer) error {
+	if t.From <= 0 || t.To <= 0 {
+		return fmt.Errorf("account id must be positive")
+	}
+	if t.From == t.To {
+		return fmt.Errorf("cannot transfer to same account")
+	}
+	if t.Amount <= 0 {
+		return fmt.Errorf("amount must be greater than 0")
+	}
+	return nil
+}
 
 // openDB initializes and verifies a PostgreSQL connection pool
 // *sql.DB is NOT a single connection — it is a pool manager
@@ -61,23 +72,21 @@ func openDB() (*sql.DB, error) {
 	db.SetMaxIdleConns(5)
 	db.SetConnMaxLifetime(30 * time.Minute)
 
-	for i:=1; i<=10; i++{
+	for i := 1; i <= 10; i++ {
 
 		err = db.Ping()
-		if err == nil{
+		if err == nil {
 			log.Println("Database connect successfully")
-			return db,nil
+			return db, nil
 
-			
 		}
-		log.Printf("waiting for database... %d/10",i)
-		time.Sleep(2 *time.Second)
+		log.Printf("waiting for database... %d/10", i)
+		time.Sleep(2 * time.Second)
 	}
-		
 
-		db.Close()
-		return nil, fmt.Errorf("database not ready after tries")
-	
+	db.Close()
+	return nil, fmt.Errorf("database not ready after tries")
+
 }
 
 // helper: read {id} from URL and convert to int
@@ -86,11 +95,11 @@ func parseID(r *http.Request) (int, error) {
 	return strconv.Atoi(idStr)
 }
 
-func writeJSONError(w http.ResponseWriter, status int, message string){
-	w.Header().Set("Content-Type","application/json")
+func writeJSONError(w http.ResponseWriter, status int, message string) {
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(map[string]string{
-		"Error" : message,
+		"Error": message,
 	})
 }
 
@@ -133,8 +142,8 @@ func main() {
 		rows, err := db.Query("SELECT id, name,balance FROM accounts ORDER BY id")
 		if err != nil {
 			log.Println("accounts query error:", err)
-    		writeJSONError(w, http.StatusInternalServerError, "database query error")
-    		return
+			writeJSONError(w, http.StatusInternalServerError, "database query error")
+			return
 		}
 		defer rows.Close()
 
@@ -178,7 +187,7 @@ func main() {
 		err = row.Scan(&acc.ID, &acc.Name, &acc.Balance)
 		//Scan of database happend but now row came back
 		if err == sql.ErrNoRows {
-			writeJSONError(w, http.StatusNotFound, "account not found")	
+			writeJSONError(w, http.StatusNotFound, "account not found")
 			return
 
 		}
@@ -193,24 +202,24 @@ func main() {
 
 	})
 
-	// POST /accounts (create) 
+	// POST /accounts (create)
 	router.Post("/accounts", func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 
 		var in input
-		if err := json.NewDecoder(r.Body).Decode(&in); err != nil{
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid json")
 			return
 		}
 
-		if in.Name == ""{
+		if in.Name == "" {
 			writeJSONError(w, http.StatusBadRequest, "name required")
 			return
 		}
 		var acc Account
-		err = db.QueryRow("INSERT INTO accounts (name, balance) VALUES ($1, 0) RETURNING id, name, balance;",in.Name).Scan(&acc.ID, &acc.Name, &acc.Balance)
-		
-		if err != nil{
+		err = db.QueryRow("INSERT INTO accounts (name, balance) VALUES ($1, 0) RETURNING id, name, balance;", in.Name).Scan(&acc.ID, &acc.Name, &acc.Balance)
+
+		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "database error")
 			return
 		}
@@ -224,14 +233,14 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 
 		id, err := parseID(r)
-		if err != nil{
+		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
 
 		var dep DepositInput
 		err = json.NewDecoder(r.Body).Decode(&dep)
-		if err != nil{
+		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invlaid JSON")
 			return
 		}
@@ -242,7 +251,7 @@ func main() {
 		}
 
 		var acc Account
-		err = db.QueryRow("UPDATE accounts SET balance = balance + $1 WHERE id = $2 RETURNING id, name, balance;", dep.Amount, id ).Scan(&acc.ID, &acc.Name, &acc.Balance)
+		err = db.QueryRow("UPDATE accounts SET balance = balance + $1 WHERE id = $2 RETURNING id, name, balance;", dep.Amount, id).Scan(&acc.ID, &acc.Name, &acc.Balance)
 		if err == sql.ErrNoRows {
 			writeJSONError(w, http.StatusNotFound, "account not found")
 			return
@@ -253,10 +262,9 @@ func main() {
 			writeJSONError(w, http.StatusInternalServerError, "database error")
 			return
 		}
-		
+
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(acc)
-
 
 	})
 
@@ -265,33 +273,32 @@ func main() {
 		w.Header().Set("Content-Type", "application/json")
 
 		id, err := parseID(r)
-		if err != nil{
+		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid id")
 			return
 		}
 
 		var wdraw WithdrawInput
 		err = json.NewDecoder(r.Body).Decode(&wdraw)
-		if err!= nil{
+		if err != nil {
 			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
-		if wdraw.Amount <=0 {
+		if wdraw.Amount <= 0 {
 			writeJSONError(w, http.StatusBadRequest, "amount cant be negetive")
 			return
 		}
 
-
 		var acc Account
 
-		err = db.QueryRow("SELECT id, name,balance FROM accounts WHERE id = $1 ",id).Scan(&acc.ID, &acc.Name, &acc.Balance)
-		if err == sql.ErrNoRows{
+		err = db.QueryRow("SELECT id, name,balance FROM accounts WHERE id = $1 ", id).Scan(&acc.ID, &acc.Name, &acc.Balance)
+		if err == sql.ErrNoRows {
 			writeJSONError(w, http.StatusNotFound, "account not found")
 			return
 		}
 
-		if err != nil{
+		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "database error")
 			return
 		}
@@ -300,17 +307,16 @@ func main() {
 			writeJSONError(w, http.StatusBadRequest, "insuffiecient funds")
 			return
 		}
-		
 
 		err = db.QueryRow("UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING id, name, balance ", wdraw.Amount, id).Scan(&acc.ID, &acc.Name, &acc.Balance)
 
-		if err == sql.ErrNoRows{
-			writeJSONError (w, http.StatusBadRequest, "insufficient funds")
+		if err == sql.ErrNoRows {
+			writeJSONError(w, http.StatusBadRequest, "insufficient funds")
 			return
 		}
 
 		if err != nil {
-			writeJSONError (w, http.StatusInternalServerError, "database error")
+			writeJSONError(w, http.StatusInternalServerError, "database error")
 			return
 
 		}
@@ -326,29 +332,29 @@ func main() {
 
 		var t Transfer
 		err := json.NewDecoder(r.Body).Decode(&t)
-		if err != nil{
-			writeJSONError(w, http.StatusBadRequest,"invalid JSON")
+		if err != nil {
+			writeJSONError(w, http.StatusBadRequest, "invalid JSON")
 			return
 		}
 
-		if t.From <=0 || t.To <=0 {
+		if t.From <= 0 || t.To <= 0 {
 			writeJSONError(w, http.StatusBadRequest, "account id cant be negetive")
 			return
 		}
 
 		if t.From == t.To {
-			writeJSONError (w, http.StatusBadRequest, "cannot transfer to same account")
+			writeJSONError(w, http.StatusBadRequest, "cannot transfer to same account")
 			return
 
 		}
 
 		if t.Amount <= 0 {
-			writeJSONError (w, http.StatusBadRequest, "amount must be greater than 0")
+			writeJSONError(w, http.StatusBadRequest, "amount must be greater than 0")
 			return
 		}
 
 		tx, err := db.Begin()
-		if err != nil{
+		if err != nil {
 			writeJSONError(w, http.StatusInternalServerError, "transaction cant start")
 			return
 		}
@@ -359,65 +365,59 @@ func main() {
 		err = tx.QueryRow("SELECT id, name, balance FROM accounts WHERE id = $1 FOR UPDATE", t.From).Scan(&fromAcc.ID, &fromAcc.Name, &fromAcc.Balance)
 
 		if err == sql.ErrNoRows {
-			writeJSONError (w, http.StatusNotFound, "from account not found")
+			writeJSONError(w, http.StatusNotFound, "from account not found")
 			return
 		}
-		if err != nil{
-			writeJSONError(w, http.StatusInternalServerError,"database error for retriving from account")
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "database error for retriving from account")
 			return
 		}
-
 
 		var toAcc Account
-		err = tx.QueryRow("SELECT id, name, balance FROM accounts WHERE id = $1 FOR UPDATE",t.To).Scan(&toAcc.ID, &toAcc.Name, &toAcc.Balance)
+		err = tx.QueryRow("SELECT id, name, balance FROM accounts WHERE id = $1 FOR UPDATE", t.To).Scan(&toAcc.ID, &toAcc.Name, &toAcc.Balance)
 		if err == sql.ErrNoRows {
-			writeJSONError (w, http.StatusNotFound, "destination account not found")
+			writeJSONError(w, http.StatusNotFound, "destination account not found")
 			return
 		}
 
-		if err!= nil{
-			writeJSONError(w, http.StatusInternalServerError,"database error to retirive destination account")
-			return
-		}
-
-		
-		err = tx.QueryRow("UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING id, name, balance",t.Amount, fromAcc.ID).Scan(&fromAcc.ID, &fromAcc.Name, &fromAcc.Balance)
-		if err == sql.ErrNoRows{
-			writeJSONError (w, http.StatusBadRequest, "insufficient balance")
-			return
-		}
-
-		if err!= nil{
-			writeJSONError (w, http.StatusInternalServerError, "database error for updating the from account")
-			return
-
-		}
-
-		err = tx.QueryRow("UPDATE accounts SET balance = balance + $1 WHERE id = $2 RETURNING id, name, balance",t.Amount, toAcc.ID).Scan(&toAcc.ID, &toAcc.Name, &toAcc.Balance)
-		if err == sql.ErrNoRows{
-			writeJSONError (w, http.StatusBadRequest, "balance not updated")
-			return
-		}
-		
 		if err != nil {
-			writeJSONError(w, http.StatusInternalServerError,"database error for updating destination account")
+			writeJSONError(w, http.StatusInternalServerError, "database error to retirive destination account")
 			return
 		}
 
-		if err := tx.Commit(); err != nil{
-			writeJSONError (w, http.StatusInternalServerError, "database error cant commit")
+		err = tx.QueryRow("UPDATE accounts SET balance = balance - $1 WHERE id = $2 AND balance >= $1 RETURNING id, name, balance", t.Amount, fromAcc.ID).Scan(&fromAcc.ID, &fromAcc.Name, &fromAcc.Balance)
+		if err == sql.ErrNoRows {
+			writeJSONError(w, http.StatusBadRequest, "insufficient balance")
+			return
+		}
+
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "database error for updating the from account")
+			return
+
+		}
+
+		err = tx.QueryRow("UPDATE accounts SET balance = balance + $1 WHERE id = $2 RETURNING id, name, balance", t.Amount, toAcc.ID).Scan(&toAcc.ID, &toAcc.Name, &toAcc.Balance)
+		if err == sql.ErrNoRows {
+			writeJSONError(w, http.StatusBadRequest, "balance not updated")
+			return
+		}
+
+		if err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "database error for updating destination account")
+			return
+		}
+
+		if err := tx.Commit(); err != nil {
+			writeJSONError(w, http.StatusInternalServerError, "database error cant commit")
 			return
 		}
 
 		w.WriteHeader(http.StatusOK)
 		_ = json.NewEncoder(w).Encode(map[string]Account{
-			"from" : fromAcc,
-			"to" : toAcc,
-
+			"from": fromAcc,
+			"to":   toAcc,
 		})
-
-
-
 
 	})
 
