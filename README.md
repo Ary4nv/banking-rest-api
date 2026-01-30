@@ -19,13 +19,14 @@ Simulates core banking operations: account creation, balance retrieval, deposits
 - Get account by ID (DB-backed with proper 404 handling)
 - Deposit money (with amount validation, DB-backed)
 - Withdraw money (with insufficient funds check, DB-backed)
-- Transfer money between accounts (with balance & same-account validation, DB transaction)
+- Transfer money between accounts (with balance & same-account validation, full DB transaction)
 - JSON request/response with proper status codes (200, 201, 400, 404)
 - Middleware: logging + panic recovery
 - PostgreSQL persistence (data survives restarts)
-- Docker containerization (consistent local runs)
+- Docker + Docker Compose support (consistent local runs with DB)
+- Basic unit testing in progress
 
-**Current Status**: Full PostgreSQL integration complete — all endpoints (create, list, get, deposit, withdraw, transfer with transaction) now use real DB persistence.
+**Current Status**: Full PostgreSQL integration complete — all endpoints use real DB persistence with transactions on transfer. Docker Compose added for app + Postgres. Basic testing implemented.
 
 ---
 
@@ -38,7 +39,8 @@ Simulates core banking operations: account creation, balance retrieval, deposits
 - **database/sql** + **pgx** driver (parameterized queries with RETURNING)
 - JSON encoding/decoding
 - Middleware (`middleware.Logger`, `middleware.Recoverer`)
-- **Docker** (containerization)
+- **Docker** & **Docker Compose** (containerization)
+- Basic unit testing (`httptest`, table-driven tests)
 
 ---
 
@@ -47,8 +49,8 @@ Simulates core banking operations: account creation, balance retrieval, deposits
 ### Prerequisites
 
 - Go 1.20 or higher
-- PostgreSQL running locally (or Docker Compose)
-- Docker (optional, recommended)
+- Docker & Docker Compose (recommended)
+- PostgreSQL (optional if using Docker Compose)
 
 ### Database Setup (One-Time – if not using Docker)
 
@@ -60,9 +62,7 @@ CREATE TABLE accounts (
 );
 ```
 
-### Environment Variable
-
-Set your database connection string:
+### Environment Variable (if running without Docker Compose)
 
 ```bash
 export DATABASE_URL="postgres://username:password@localhost:5432/banking_api?sslmode=disable"
@@ -96,7 +96,7 @@ docker-compose up --build
 
 ## 🔍 API Endpoints
 
-Base URL: `http://localhost:3000` (or :8080 with Docker)
+Base URL: `http://localhost:3000` (or :8080 with Docker Compose)
 
 | Method | Endpoint                        | Description                          | Example curl Command                                                                 | Expected Response (200/201)                          |
 |--------|---------------------------------|--------------------------------------|--------------------------------------------------------------------------------------|------------------------------------------------------|
@@ -118,13 +118,14 @@ Base URL: `http://localhost:3000` (or :8080 with Docker)
 ## ⚠️ Current Limitations
 
 - No authentication — learning/demo purposes only
-- No unit tests yet — planned next
+- Basic unit tests implemented — more coverage planned
+- No frontend yet — planned next
 
 ---
 
 ## 🧭 Roadmap / Next Steps
 
-- Add unit tests for handlers
+- Expand unit tests for all handlers
 - Add minimal frontend demo (HTML + JS fetch)
 - Deploy to Render (public live demo)
 - Prepare for interviews (explain endpoints, tradeoffs, errors)
